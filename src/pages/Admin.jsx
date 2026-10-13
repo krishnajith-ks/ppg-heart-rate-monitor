@@ -1,7 +1,9 @@
-// src/pages/Admin.jsx - Hidden viva diagnostics lab hosting all 6 graphs, calculations, and synced replay
+// src/pages/Admin.jsx - Hidden viva diagnostics lab hosting all 6 graphs, calculations, synced replay, and demo video upload
 import React, { useState, useEffect, useRef } from 'react';
 import { sharedDspEngine } from '../state/dspEngine.js';
 import { sharedClipRecorder } from '../camera/clipRecorder.js';
+import { VideoFileSource } from '../camera/videoFileSource.js';
+import { FrameSampler } from '../camera/frameSampler.js';
 import { SignalGraph } from '../components/SignalGraph.jsx';
 import { SpectrumGraph } from '../components/SpectrumGraph.jsx';
 import { BpmTrendGraph } from '../components/BpmTrendGraph.jsx';
@@ -14,13 +16,22 @@ export function Admin() {
   const [signals, setSignals] = useState(null);
   const [bpmHistory, setBpmHistory] = useState([]);
 
-  // Synced video replay state
+  // Synced video replay state (camera recording)
   const [replayUrl, setReplayUrl] = useState(sharedClipRecorder.getBlobUrl());
   const [cursorTime, setCursorTime] = useState(null);
 
+  // Demo upload state
+  const [demoFileLoaded, setDemoFileLoaded] = useState(false);
+  const [demoDuration, setDemoDuration] = useState(0);
+  const [demoIsPlaying, setDemoIsPlaying] = useState(false);
+  const [demoError, setDemoError] = useState(null);
+  const [demoMetrics, setDemoMetrics] = useState(null);
+
   const videoReplayRef = useRef(null);
+  const demoVideoRef = useRef(null);
   const greenCanvasRef = useRef(null);
-  const animFrameRef = useRef(null);
+  const videoFileSourceRef = useRef(null);
+  const demoSamplerRef = useRef(null);
 
   useEffect(() => {
     // Initial load from shared engine
@@ -43,26 +54,27 @@ export function Admin() {
 
     return () => {
       unsubscribe();
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (videoFileSourceRef.current) {
+        videoFileSourceRef.current.clear();
+      }
     };
   }, []);
 
   // Update synchronized cursor when replay video plays or scrubs
   const handleTimeUpdate = () => {
-    if (videoReplayRef.current && signals?.tUniform && signals.tUniform.length > 0) {
-      const vidTime = videoReplayRef.current.currentTime;
+    const video = videoReplayRef.current || demoVideoRef.current;
+    if (video && signals?.tUniform && signals.tUniform.length > 0) {
+      const vidTime = video.currentTime;
       const tStart = signals.tUniform[0];
       setCursorTime(tStart + vidTime);
 
-      // Render green channel canvas if toggle is active
       if (greenChannelOnly && greenCanvasRef.current) {
-        renderGreenChannelFrame();
+        renderGreenChannelFrame(video);
       }
     }
   };
 
-  const renderGreenChannelFrame = () => {
-    const video = videoReplayRef.current;
+  const renderGreenChannelFrame = (video) => {
     const canvas = greenCanvasRef.current;
     if (!video || !canvas || video.readyState < 2) return;
 
@@ -87,7 +99,7 @@ export function Admin() {
     // Overlay 64x64 sampling region box
     ctx.strokeStyle = '#ef4444';
     ctx.lineWidth = 1.5;
-    const boxSize = 32; // scaled visual box
+    const boxSize = 32;
     const cx = (w - boxSize) / 2;
     const cy = (h - boxSize) / 2;
     ctx.strokeRect(cx, cy, boxSize, boxSize);
@@ -96,6 +108,66 @@ export function Admin() {
   const handleDiscardClip = () => {
     sharedClipRecorder.discard();
     setReplayUrl(null);
+    setCursorTime(null);
+  };
+
+  // Video Upload Demo Mode Handlers
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setDemoError(null);
+    sharedDspEngine.reset();
+
+    if (!demoVideoRef.current) return;
+
+    videoFileSourceRef.current = new VideoFileSource(demoVideoRef.current, () => {});
+
+    try {
+      const info = await videoFileSourceRef.current.loadFile(file);
+      setDemoDuration(info.duration);
+      setDemoFileLoaded(true);
+
+      // Attach frame sampler to demo video element
+      demoSamplerRef.current = new FrameSampler(demoVideoRef.current, (frame) => {
+        // Feed into the SAME dspEngine as live camera!
+        sharedDspEngine.addSample(frame.t, frame.g, frame.hasFinger);
+      });
+    } catch (err) {
+      console.error('Demo video load error:', err);
+      setDemoError(err.message || 'Failed to load video file.');
+      setDemoFileLoaded(false);
+    }
+  };
+
+  const handlePlayDemo = async () => {
+    if (!videoFileSourceRef.current || !demoSamplerRef.current) return;
+    setDemoIsPlaying(true);
+    setDemoMetrics(null);
+    sharedDspEngine.reset();
+
+    demoSamplerRef.current.start();
+    await videoFileSourceRef.current.play();
+
+    demoVideoRef.current.onended = () => {
+      setDemoIsPlaying(false);
+      demoSamplerRef.current.stop();
+      sharedDspEngine.runPipeline();
+      setDemoMetrics(sharedDspEngine.getMetrics());
+    };
+  };
+
+  const handleClearDemo = () => {
+    if (demoSamplerRef.current) {
+      demoSamplerRef.current.stop();
+    }
+    if (videoFileSourceRef.current) {
+      videoFileSourceRef.current.clear();
+    }
+    setDemoFileLoaded(false);
+    setDemoIsPlaying(false);
+    setDemoMetrics(null);
+    setDemoError(null);
     setCursorTime(null);
   };
 
@@ -388,26 +460,112 @@ export function Admin() {
         </div>
       </div>
 
-      {/* Collapsed Demo Tools Section (Video Upload) */}
+      {/* Video Upload Demo Mode - Collapsed "Demo tools" Section */}
       <div className="card">
         <div
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
           onClick={() => setDemoToolsOpen(!demoToolsOpen)}
         >
-          <h3 className="card-title" style={{ margin: 0 }}>
-            Demo Tools (Collapsed by default)
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              Demo Tools (Video Upload Mode)
+            </h3>
+            <span className="badge badge-yellow">Laptop Presentation</span>
+          </div>
           <span style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)' }}>
-            {demoToolsOpen ? '▲ Hide' : '▼ Expand'}
+            {demoToolsOpen ? '▲ Close' : '▼ Expand'}
           </span>
         </div>
 
         {demoToolsOpen && (
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-              Upload pre-recorded fingertip video to demonstrate the DSP pipeline without a live phone camera (activates in Milestone 6b).
+              Upload a pre-recorded fingertip video (MP4, WebM, MOV) to test and demonstrate the DSP pipeline without a live phone camera.
             </p>
-            <input type="file" accept="video/*" disabled style={{ opacity: 0.6 }} />
+
+            {demoError && (
+              <div style={{ color: 'var(--accent-pulse)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                ⚠️ {demoError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
+              <input
+                type="file"
+                accept="video/*"
+                onChange={handleFileSelect}
+                style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}
+              />
+
+              {demoFileLoaded && (
+                <>
+                  <button
+                    onClick={handlePlayDemo}
+                    disabled={demoIsPlaying}
+                    className="button-primary"
+                    style={{ width: 'auto', padding: '0.4rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    {demoIsPlaying ? '▶ Playing & Processing at 1x...' : '▶ Run Demo Processing'}
+                  </button>
+
+                  <button
+                    onClick={handleClearDemo}
+                    style={{
+                      background: 'var(--bg-surface-elevated)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-subtle)',
+                      padding: '0.4rem 0.8rem',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear File
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Hidden/Visible Video Preview for Demo File */}
+            <div style={{ display: demoFileLoaded ? 'flex' : 'none', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <video
+                ref={demoVideoRef}
+                playsInline
+                muted
+                controls={!demoIsPlaying}
+                onTimeUpdate={handleTimeUpdate}
+                style={{
+                  width: '200px',
+                  height: '150px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  backgroundColor: '#000',
+                  objectFit: 'cover'
+                }}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Demo Footage: {demoDuration.toFixed(1)}s duration
+              </span>
+            </div>
+
+            {/* Labeled Demo Results */}
+            {demoMetrics && (
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.85rem', borderRadius: 'var(--radius-sm)', borderLeft: '4px solid var(--accent-cyan)', marginTop: '0.75rem' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
+                  Result from uploaded video (demo)
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
+                  {demoMetrics.headlineBpm ?? '--'} BPM
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                  Peak BPM: {demoMetrics.bpmPeak} | FFT BPM: {demoMetrics.bpmFFT} (Confidence: {demoMetrics.confidence})
+                </div>
+              </div>
+            )}
+
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+              Privacy note: File is loaded locally into browser RAM and never uploaded to any server. Results from phone videos may exhibit minor exposure changes compared to live hardware streams.
+            </div>
           </div>
         )}
       </div>
