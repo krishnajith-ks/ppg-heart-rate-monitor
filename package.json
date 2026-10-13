@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:dsp": "node .agents/skills/dsp-verify/scripts/run_dsp_tests.mjs"
+    "test": "node src/dsp/pipeline.test.js",
+    "test:dsp": "node src/dsp/pipeline.test.js"
   },
   "dependencies": {
     "react": "^18.3.1",
