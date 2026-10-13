@@ -6,6 +6,7 @@ import { sharedDspEngine } from '../state/dspEngine.js';
 import { MeasurementMachine, STATES } from '../state/measurementMachine.js';
 import { ProgressRing } from '../components/ProgressRing.jsx';
 import { HeartbeatLoader } from '../components/HeartbeatLoader.jsx';
+import { sharedClipRecorder } from '../camera/clipRecorder.js';
 import { CONFIG } from '../config.js';
 
 export function Measure() {
@@ -73,6 +74,11 @@ export function Measure() {
           const currentState = machineRef.current.getState();
           if (currentState === STATES.MEASURING && frame.hasFinger) {
             sharedDspEngine.addSample(frame.t, frame.g, true);
+
+            // Start in-memory clip recorder if not yet active
+            if (!sharedClipRecorder.isRecording && cameraSessionRef.current.getStream()) {
+              sharedClipRecorder.start(cameraSessionRef.current.getStream());
+            }
           }
 
           // Advance measurement state machine
@@ -101,17 +107,25 @@ export function Measure() {
     }
   };
 
-  const finishMeasurement = () => {
-    // 1. Run final pipeline over the full 12s window to extract high-accuracy results
+  const finishMeasurement = async () => {
+    // 1. Stop recording and preserve the 12s in-memory clip for the Admin Panel
+    if (sharedClipRecorder.isRecording) {
+      await sharedClipRecorder.stop();
+    }
+
+    // 2. Run final pipeline over the full 12s window to extract high-accuracy results
     sharedDspEngine.runPipeline();
     const finalMetrics = sharedDspEngine.getMetrics();
     setMetrics(finalMetrics);
 
-    // 2. Shut down camera and torch automatically per user preference
+    // 3. Shut down camera and torch automatically per user preference
     handleStopCamera(false);
   };
 
   const handleStopCamera = (resetMachine = true) => {
+    if (sharedClipRecorder.isRecording) {
+      sharedClipRecorder.stop();
+    }
     if (frameSamplerRef.current) {
       frameSamplerRef.current.stop();
       frameSamplerRef.current = null;

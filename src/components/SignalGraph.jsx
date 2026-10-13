@@ -14,6 +14,7 @@ export function SignalGraph({
   timeData,         // Float64Array or Array of timestamps (s)
   signalData,       // Float64Array or Array of signal amplitudes
   peakIndices = [], // Array of indices where systolic peaks were detected
+  cursorTime = null, // Current video playback timestamp (s) for synced cursor
   color = '#10b981',
   unitY = 'amp',
   height = 140
@@ -146,6 +147,25 @@ export function SignalGraph({
       }
     }
 
+    // Synchronized video replay cursor (vertical line at cursorTime)
+    if (cursorTime !== null && cursorTime !== undefined && timeData && timeData.length > 0) {
+      const cx = toScreenX(cursorTime);
+      if (cx >= padLeft && cx <= padLeft + plotW) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#f59e0b'; // Amber cursor line
+        ctx.lineWidth = 2;
+        ctx.moveTo(cx, padTop);
+        ctx.lineTo(cx, padTop + plotH);
+        ctx.stroke();
+
+        // Cursor header diamond
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(cx, padTop, 3.5, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
     // Draw Axes & Labels with physical units
     ctx.fillStyle = '#9ca3af';
     ctx.font = '10px monospace';
@@ -173,7 +193,7 @@ export function SignalGraph({
     ctx.fillText(unitY, 0, 0);
     ctx.restore();
 
-  }, [timeData, signalData, peakIndices, color, unitY, height]);
+  }, [timeData, signalData, peakIndices, cursorTime, color, unitY, height]);
 
   return (
     <div style={{ marginBottom: '0.75rem' }}>

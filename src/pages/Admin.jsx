@@ -1,6 +1,7 @@
-// src/pages/Admin.jsx - Hidden viva diagnostics lab hosting all 6 graphs and intermediate calculations
+// src/pages/Admin.jsx - Hidden viva diagnostics lab hosting all 6 graphs, calculations, and synced replay
 import React, { useState, useEffect, useRef } from 'react';
 import { sharedDspEngine } from '../state/dspEngine.js';
+import { sharedClipRecorder } from '../camera/clipRecorder.js';
 import { SignalGraph } from '../components/SignalGraph.jsx';
 import { SpectrumGraph } from '../components/SpectrumGraph.jsx';
 import { BpmTrendGraph } from '../components/BpmTrendGraph.jsx';
@@ -13,7 +14,13 @@ export function Admin() {
   const [signals, setSignals] = useState(null);
   const [bpmHistory, setBpmHistory] = useState([]);
 
+  // Synced video replay state
+  const [replayUrl, setReplayUrl] = useState(sharedClipRecorder.getBlobUrl());
+  const [cursorTime, setCursorTime] = useState(null);
+
+  const videoReplayRef = useRef(null);
   const greenCanvasRef = useRef(null);
+  const animFrameRef = useRef(null);
 
   useEffect(() => {
     // Initial load from shared engine
@@ -21,6 +28,7 @@ export function Admin() {
     setCalcs(sharedDspEngine.getCalculations());
     setSignals(sharedDspEngine.getSignals());
     setBpmHistory(sharedDspEngine.getBpmHistory());
+    setReplayUrl(sharedClipRecorder.getBlobUrl());
 
     // Subscribe to ongoing dspEngine updates
     const unsubscribe = sharedDspEngine.subscribe((result) => {
@@ -30,10 +38,66 @@ export function Admin() {
         setSignals(result.signals);
         setBpmHistory([...sharedDspEngine.getBpmHistory()]);
       }
+      setReplayUrl(sharedClipRecorder.getBlobUrl());
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
   }, []);
+
+  // Update synchronized cursor when replay video plays or scrubs
+  const handleTimeUpdate = () => {
+    if (videoReplayRef.current && signals?.tUniform && signals.tUniform.length > 0) {
+      const vidTime = videoReplayRef.current.currentTime;
+      const tStart = signals.tUniform[0];
+      setCursorTime(tStart + vidTime);
+
+      // Render green channel canvas if toggle is active
+      if (greenChannelOnly && greenCanvasRef.current) {
+        renderGreenChannelFrame();
+      }
+    }
+  };
+
+  const renderGreenChannelFrame = () => {
+    const video = videoReplayRef.current;
+    const canvas = greenCanvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.drawImage(video, 0, 0, w, h);
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    // Isolate green channel by zeroing red and blue channels per Section 7.3 item 1
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 0;     // Red = 0
+      // data[i+1] stays green
+      data[i + 2] = 0; // Blue = 0
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Overlay 64x64 sampling region box
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.5;
+    const boxSize = 32; // scaled visual box
+    const cx = (w - boxSize) / 2;
+    const cy = (h - boxSize) / 2;
+    ctx.strokeRect(cx, cy, boxSize, boxSize);
+  };
+
+  const handleDiscardClip = () => {
+    sharedClipRecorder.discard();
+    setReplayUrl(null);
+    setCursorTime(null);
+  };
 
   return (
     <div className="main-content">
@@ -45,28 +109,125 @@ export function Admin() {
               Admin Diagnostics Lab & Viva Panel
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              Hidden route for viva defense: exposes all 6 processing waveforms and exact mathematical parameter substitutions.
+              Hidden route for viva defense: exposes all 6 processing waveforms, parameter substitutions, and synced video replay.
             </p>
           </div>
           <span className="badge badge-yellow">Hidden Route</span>
         </div>
       </div>
 
+      {/* Last Capture Replay Section with Synced Cursor (GUIDE.md Section 7.3 item 2) */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="card-title" style={{ margin: 0 }}>
+            Last Capture Replay (Explanation Mode)
+          </h3>
+          {replayUrl && (
+            <button
+              onClick={handleDiscardClip}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: 'var(--accent-pulse)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                padding: '0.25rem 0.65rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.75rem',
+                cursor: 'pointer'
+              }}
+            >
+              Discard Clip
+            </button>
+          )}
+        </div>
+
+        {replayUrl ? (
+          <div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+              {/* Standard video element */}
+              <div style={{ display: greenChannelOnly ? 'none' : 'block' }}>
+                <video
+                  ref={videoReplayRef}
+                  src={replayUrl}
+                  controls
+                  playsInline
+                  onTimeUpdate={handleTimeUpdate}
+                  style={{
+                    width: '160px',
+                    height: '120px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    backgroundColor: '#000',
+                    objectFit: 'cover'
+                  }}
+                />
+              </div>
+
+              {/* Green Channel Isolation Canvas */}
+              <div style={{ display: greenChannelOnly ? 'block' : 'none' }}>
+                <canvas
+                  ref={greenCanvasRef}
+                  width="160"
+                  height="120"
+                  style={{
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--accent-green)',
+                    backgroundColor: '#000',
+                    display: 'block'
+                  }}
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => setGreenChannelOnly(!greenChannelOnly)}
+                  style={{
+                    background: greenChannelOnly ? 'var(--accent-green)' : 'var(--bg-surface-elevated)',
+                    color: greenChannelOnly ? '#000' : 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '0.4rem 0.8rem',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'block',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  {greenChannelOnly ? '✓ Green Channel Isolated' : 'Toggle Green Channel View'}
+                </button>
+
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Scrub video to move the synchronized cursor across graphs.
+                </p>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Note: Clip is compressed in transient RAM for viva explanation only.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', borderRadius: 'var(--radius-sm)' }}>
+            No capture yet. Run a measurement from the main page to populate this replay view.
+          </div>
+        )}
+      </div>
+
       {/* Live Waveform Suite - All 6 Processing Stages */}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <h3 className="card-title" style={{ margin: 0 }}>
-            Live Processing Waveforms (All 6 Stages)
+            Processing Waveforms (All 6 Stages)
           </h3>
           <span className="badge badge-green">Real-Time Canvas</span>
         </div>
 
-        {/* 1. Filtered signal with detected peaks */}
+        {/* 1. Filtered signal with detected peaks & synced cursor */}
         <SignalGraph
           title="Stage 1: Band-Pass Filtered Signal (0.5–4.0 Hz Butterworth)"
           timeData={signals?.tUniform}
           signalData={signals?.filtered}
           peakIndices={signals?.peakIndices}
+          cursorTime={cursorTime}
           color="#10b981"
           unitY="AC Amp"
           height={140}
@@ -77,6 +238,7 @@ export function Admin() {
           title="Stage 2: Raw Green Channel Signal (10 s window)"
           timeData={signals?.tUniform}
           signalData={signals?.raw}
+          cursorTime={cursorTime}
           color="#9ca3af"
           unitY="Intensity"
           height={110}
@@ -87,6 +249,7 @@ export function Admin() {
           title="Stage 3: Detrended Signal (Moving-average baseline removed)"
           timeData={signals?.tUniform}
           signalData={signals?.detrended}
+          cursorTime={cursorTime}
           color="#38bdf8"
           unitY="Zero-Mean"
           height={110}
