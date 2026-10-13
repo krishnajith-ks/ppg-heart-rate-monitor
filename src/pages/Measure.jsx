@@ -1,9 +1,12 @@
-// src/pages/Measure.jsx - Milestone 3: Camera capture, 64x64 frame sampling, and live sensor debug view
+// src/pages/Measure.jsx - Milestone 4: Live Canvas Graphs and Dual-Method BPM Display
 import React, { useState, useEffect, useRef } from 'react';
 import { CameraSession } from '../camera/cameraSession.js';
 import { FrameSampler } from '../camera/frameSampler.js';
-import { RingBuffer } from '../dsp/ringBuffer.js';
-import { CONFIG } from '../config.js';
+import { sharedDspEngine } from '../state/dspEngine.js';
+import { SignalGraph } from '../components/SignalGraph.jsx';
+import { SpectrumGraph } from '../components/SpectrumGraph.jsx';
+import { BpmTrendGraph } from '../components/BpmTrendGraph.jsx';
+import { BpmCard } from '../components/BpmCard.jsx';
 
 export function Measure() {
   const [isMobile, setIsMobile] = useState(true);
@@ -11,70 +14,66 @@ export function Measure() {
   const [errorMessage, setErrorMessage] = useState(null);
   const [torchActive, setTorchActive] = useState(false);
 
-  // Low-frequency UI state (updated ~1-2x/second only, per GUIDE.md Section 11 Rule 2)
-  const [debugStats, setDebugStats] = useState({
-    fps: 0,
-    meanR: 0,
-    meanG: 0,
-    meanB: 0,
-    rgRatio: 0,
-    hasFinger: false,
-    sampleCount: 0
+  // Low-frequency UI state (updated ~1 Hz from dspEngine listener)
+  const [metrics, setMetrics] = useState(null);
+  const [hasFinger, setHasFinger] = useState(false);
+  const [fps, setFps] = useState(0);
+
+  // Signal data state for graph rendering (updated ~1 Hz, plain arrays passed to canvas)
+  const [graphSignals, setGraphSignals] = useState({
+    tUniform: null,
+    raw: null,
+    filtered: null,
+    peakIndices: [],
+    fftFrequencies: null,
+    fftMagnitudes: null,
+    peakFreq: 0
   });
+  const [bpmHistory, setBpmHistory] = useState([]);
 
   const videoRef = useRef(null);
   const cameraSessionRef = useRef(null);
   const frameSamplerRef = useRef(null);
-
-  // High-frequency mutable storage (NEVER put per-frame samples into React state)
-  const ringBufferRef = useRef(new RingBuffer(CONFIG.SAMPLING.BUFFER_SIZE));
-  const latestFrameStatsRef = useRef({
-    r: 0,
-    g: 0,
-    b: 0,
-    hasFinger: false
-  });
+  const lastFpsUpdateTimeRef = useRef(0);
+  const frameCountRef = useRef(0);
 
   useEffect(() => {
-    // Detect mobile device per GUIDE.md Section 12
     const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
     const hasTouch = navigator.maxTouchPoints > 0;
     setIsMobile(hasCoarsePointer || hasTouch);
 
     cameraSessionRef.current = new CameraSession();
 
-    // Low-frequency interval (1 Hz) to update UI debug numbers without re-rendering per frame
-    const intervalId = setInterval(() => {
-      if (ringBufferRef.current && ringBufferRef.current.size() > 2) {
-        const samples = ringBufferRef.current.toArray();
-        const n = samples.t.length;
-        const duration = samples.t[n - 1] - samples.t[0];
-        const fps = duration > 0 ? (n - 1) / duration : 0;
-        const latest = latestFrameStatsRef.current;
-
-        setDebugStats({
-          fps: Number(fps.toFixed(1)),
-          meanR: Number(latest.r.toFixed(1)),
-          meanG: Number(latest.g.toFixed(1)),
-          meanB: Number(latest.b.toFixed(1)),
-          rgRatio: latest.g > 0 ? Number((latest.r / latest.g).toFixed(2)) : 0,
-          hasFinger: latest.hasFinger,
-          sampleCount: n
+    // Subscribe to dspEngine 1 Hz calculation updates
+    const unsubscribe = sharedDspEngine.subscribe((result) => {
+      if (result && result.success) {
+        setMetrics(result.metrics);
+        setGraphSignals({
+          tUniform: result.signals.tUniform,
+          raw: result.signals.raw,
+          filtered: result.signals.filtered,
+          peakIndices: result.signals.peakIndices,
+          fftFrequencies: result.signals.fftFrequencies,
+          fftMagnitudes: result.signals.fftMagnitudes,
+          peakFreq: result.metrics.peakFreq
         });
+        setBpmHistory([...sharedDspEngine.getBpmHistory()]);
       }
-    }, 500);
+    });
 
     return () => {
-      clearInterval(intervalId);
-      // Clean up on component unmount
+      unsubscribe();
       if (frameSamplerRef.current) frameSamplerRef.current.stop();
       if (cameraSessionRef.current) cameraSessionRef.current.stop();
+      sharedDspEngine.reset();
     };
   }, []);
 
   const handleStartCamera = async () => {
     setErrorMessage(null);
-    ringBufferRef.current.clear();
+    sharedDspEngine.reset();
+    frameCountRef.current = 0;
+    lastFpsUpdateTimeRef.current = performance.now();
 
     try {
       const { stream, hasTorch } = await cameraSessionRef.current.start();
@@ -84,18 +83,22 @@ export function Measure() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
 
-        // Initialize frame sampler on video element
         frameSamplerRef.current = new FrameSampler(videoRef.current, (frame) => {
-          // Store green channel brightness in ring buffer with timestamp
-          ringBufferRef.current.push(frame.t, frame.g);
+          // Feed frame into sharedDspEngine
+          sharedDspEngine.addSample(frame.t, frame.g, frame.hasFinger);
 
-          // Update latest frame stats ref (no React re-render here!)
-          latestFrameStatsRef.current = {
-            r: frame.r,
-            g: frame.g,
-            b: frame.b,
-            hasFinger: frame.hasFinger
-          };
+          // Track finger status (update state only on change)
+          setHasFinger((prev) => (prev !== frame.hasFinger ? frame.hasFinger : prev));
+
+          // Calculate measured fps once per second
+          frameCountRef.current++;
+          const now = performance.now();
+          if (now - lastFpsUpdateTimeRef.current >= 1000) {
+            const elapsed = (now - lastFpsUpdateTimeRef.current) / 1000.0;
+            setFps(Number((frameCountRef.current / elapsed).toFixed(1)));
+            frameCountRef.current = 0;
+            lastFpsUpdateTimeRef.current = now;
+          }
         });
 
         frameSamplerRef.current.start();
@@ -119,147 +122,132 @@ export function Measure() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    sharedDspEngine.reset();
     setIsCapturing(false);
     setTorchActive(false);
+    setMetrics(null);
+    setHasFinger(false);
   };
 
   return (
     <div className="main-content">
+      {/* Educational disclaimer */}
       <div className="disclaimer-banner">
         Educational DSP Demonstration • Not a Medical Device
       </div>
 
+      {/* Desktop warning if non-touch */}
       {!isMobile && (
         <div className="card" style={{ borderLeft: '4px solid var(--accent-cyan)' }}>
-          <h2 className="card-title">Desktop / Laptop Detected</h2>
+          <h2 className="card-title">Desktop / Laptop Notice</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Live fingertip camera measurement works on phones. Open this site on your mobile phone to measure your pulse.
-          </p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-            Desktop note: You can still use the camera debug controls below if a webcam is available, or use the video upload demo mode in the Admin Panel.
+            Live heart-rate measurement works best on phones with a rear camera and flash.
+            Open this URL on your phone for real PPG capture, or test on desktop using video upload in Admin Panel.
           </p>
         </div>
       )}
 
-      {/* Error banner */}
+      {/* Error notification */}
       {errorMessage && (
         <div className="card" style={{ borderLeft: '4px solid var(--accent-pulse)' }}>
-          <h3 className="card-title" style={{ color: 'var(--accent-pulse)' }}>Camera Access Error</h3>
+          <h3 className="card-title" style={{ color: 'var(--accent-pulse)' }}>Camera Error</h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{errorMessage}</p>
-          {!window.isSecureContext && (
-            <p style={{ color: 'var(--accent-yellow)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-              ⚠️ Camera access requires HTTPS. If testing on a phone over local Wi-Fi, run an HTTPS tunnel (e.g. ngrok or Vercel preview).
-            </p>
-          )}
         </div>
       )}
 
-      {/* Camera Session & Controls Card */}
-      <div className="card">
-        <h2 className="card-title">
-          <span>Camera Capture (Milestone 3)</span>
-          <span className={`badge ${isCapturing ? 'badge-green' : 'badge-yellow'}`}>
-            {isCapturing ? 'Stream Active' : 'Idle'}
-          </span>
-        </h2>
+      {/* Headline Heart Rate Card */}
+      <BpmCard
+        hasFinger={hasFinger}
+        metrics={metrics}
+        isCapturing={isCapturing}
+      />
 
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.925rem', marginBottom: '1.25rem' }}>
-          {isCapturing
-            ? 'Cover the rear camera lens and flashlight firmly with your fingertip.'
-            : 'Press Start Camera to request camera access, engage the torch, and begin sampling.'}
-        </p>
+      {/* Camera Preview and Controls */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="card-title" style={{ margin: 0 }}>Camera & Sensor Status</h3>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {isCapturing && (
+              <span className="badge badge-green">{fps} Hz</span>
+            )}
+            <span className={`badge ${isCapturing ? (hasFinger ? 'badge-green' : 'badge-yellow') : 'badge-red'}`}>
+              {!isCapturing ? 'Stopped' : (hasFinger ? 'Finger On' : 'No Finger')}
+            </span>
+          </div>
+        </div>
 
         {/* Video feed element (muted, playsInline) */}
-        <div style={{ display: isCapturing ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: isCapturing ? 'flex' : 'none', justifyContent: 'center', marginBottom: '0.75rem' }}>
           <video
             ref={videoRef}
             playsInline
             muted
             autoPlay
             style={{
-              width: '180px',
-              height: '135px',
-              borderRadius: 'var(--radius-md)',
-              border: '2px solid var(--border-subtle)',
+              width: '120px',
+              height: '90px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
               objectFit: 'cover',
               backgroundColor: '#000'
             }}
           />
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-            Rear Stream (640×480 downsampled to 64×64 offscreen)
-          </span>
         </div>
 
-        {/* Controls */}
         {!isCapturing ? (
           <button className="button-primary" onClick={handleStartCamera}>
-            Start Camera
+            Start Camera Measurement
           </button>
         ) : (
           <button
             className="button-primary"
-            style={{ backgroundColor: 'var(--bg-surface-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)' }}
+            style={{ backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)' }}
             onClick={handleStopCamera}
           >
-            Stop Camera
+            Stop Measurement
           </button>
         )}
       </div>
 
-      {/* Sensor & Frame Diagnostics Card */}
-      {isCapturing && (
-        <div className="card">
-          <h3 className="card-title">Live Sensor & Frame Diagnostics</h3>
+      {/* Live Waveform Graphs Section */}
+      <div className="card">
+        <h3 className="card-title">Live DSP Waveforms</h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Finger Detected</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: debugStats.hasFinger ? 'var(--accent-green)' : 'var(--accent-pulse)' }}>
-                {debugStats.hasFinger ? '✓ YES' : '✗ NO FINGER'}
-              </div>
-            </div>
+        {/* 1. Filtered signal with detected systolic peaks */}
+        <SignalGraph
+          title="1. Band-pass Filtered Waveform (0.5–4.0 Hz Butterworth)"
+          timeData={graphSignals.tUniform}
+          signalData={graphSignals.filtered}
+          peakIndices={graphSignals.peakIndices}
+          color="#10b981"
+          unitY="AC Amp"
+          height={140}
+        />
 
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Measured Frame Rate</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: debugStats.fps >= 24 ? 'var(--accent-cyan)' : 'var(--accent-yellow)' }}>
-                {debugStats.fps} Hz
-              </div>
-            </div>
+        {/* 2. Raw green channel intensity */}
+        <SignalGraph
+          title="2. Raw Green Channel Signal (scrolling uniform window)"
+          timeData={graphSignals.tUniform}
+          signalData={graphSignals.raw}
+          color="#9ca3af"
+          unitY="Intensity"
+          height={110}
+        />
 
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mean Red (Tissue)</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-pulse)' }}>
-                {debugStats.meanR} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/ 255</span>
-              </div>
-            </div>
+        {/* 3. Frequency-domain FFT spectrum */}
+        <SpectrumGraph
+          frequencies={graphSignals.fftFrequencies}
+          magnitudes={graphSignals.fftMagnitudes}
+          peakFreq={graphSignals.peakFreq}
+          height={140}
+        />
 
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mean Green (Pulse)</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-green)' }}>
-                {debugStats.meanG} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/ 255</span>
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Red / Green Ratio</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: debugStats.rgRatio >= 1.15 ? 'var(--accent-green)' : 'var(--text-muted)' }}>
-                {debugStats.rgRatio}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Flashlight (Torch)</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: torchActive ? 'var(--accent-yellow)' : 'var(--text-muted)' }}>
-                {torchActive ? 'Active' : 'Unavailable (iOS/No flash)'}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '0.85rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Stored Samples in Float32Array: <strong>{debugStats.sampleCount}</strong> / {CONFIG.SAMPLING.BUFFER_SIZE}
-          </div>
-        </div>
-      )}
+        {/* 4. Session BPM trend */}
+        <BpmTrendGraph
+          history={bpmHistory}
+          height={110}
+        />
+      </div>
     </div>
   );
 }
