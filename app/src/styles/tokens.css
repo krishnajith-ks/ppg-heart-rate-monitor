@@ -1,0 +1,99 @@
+:root {
+  /* Surfaces & Canvas - Crumple Theme */
+  --bg-canvas: #f5f3ef;
+  --bg-surface: #ffffff;
+  --bg-muted: #ece8e1;
+  --bg-subtle: #fbfaf8;
+
+  /* Typography & Ink */
+  --ink-primary: #111111;
+  --ink-secondary: #555555;
+  --ink-tertiary: #888888;
+  --ink-inverted: #ffffff;
+
+  /* Hairline Borders */
+  --border-hairline: #dcd7cc;
+  --border-subtle: #e8e4dc;
+  --border-strong: #111111;
+
+  /* Single High-Contrast Accent */
+  --accent-arterial: #ff3b19;
+  --accent-arterial-deep: #e6391a;
+  --accent-arterial-glow: rgba(255, 59, 25, 0.28);
+  --accent-arterial-subtle: rgba(255, 59, 25, 0.08);
+
+  /* Typography Families */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Layout */
+  --container-max-width: 1180px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* Animations */
+@keyframes systolic-beat {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.06); }
+  28% { transform: scale(0.98); }
+  42% { transform: scale(1.03); }
+  70% { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 0; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+.pulse-active {
+  animation: systolic-beat 1.1s cubic-bezier(0.21, 0.61, 0.35, 1) infinite;
+}
+
+/* Responsive Layout */
+@media (max-width: 900px) {
+  #hero {
+    grid-template-columns: 1fr !important;
+    gap: 2.5rem !important;
+    text-align: center;
+  }
+  #hero h1 {
+    font-size: 2.4rem !important;
+  }
+  #hero p {
+    margin: 0 auto 2rem auto !important;
+  }
+  #hero > div:first-child > div:last-child {
+    justify-content: center !important;
+  }
+  #viewport > div:nth-child(2) {
+    grid-template-columns: 1fr !important;
+  }
+  header {
+    padding: 0.9rem 1.2rem !important;
+  }
+  header nav {
+    gap: 1rem !important;
+  }
+}
+
+@media (max-width: 600px) {
+  header nav {
+    display: none !important;
+  }
+}

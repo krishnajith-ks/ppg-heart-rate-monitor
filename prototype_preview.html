@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pulse Monitor — Biophotonic Heart Rate</title>
+  <style>
+    /* CRUMPLE EDITORIAL MINIMALISM */
+    :root {
+      --bg-canvas: #f5f3ef;
+      --bg-surface: #ffffff;
+      --bg-muted: #ece8e1;
+      --ink-primary: #111111;
+      --ink-secondary: #555555;
+      --ink-tertiary: #888888;
+      --border-hairline: #dcd7cc;
+      --border-subtle: #e8e4dc;
+      --accent-arterial: #ff3b19;
+      --accent-arterial-deep: #e6391a;
+      --accent-arterial-glow: rgba(255, 59, 25, 0.28);
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-canvas);
+      color: var(--ink-primary);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* HEADER */
+    header {
+      background: rgba(245, 243, 239, 0.95);
+      border-bottom: 1px solid var(--border-hairline);
+      padding: 1.1rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand-logo {
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-primary);
+    }
+    .nav-status {
+      font-size: 0.72rem;
+      color: var(--ink-tertiary);
+      letter-spacing: 0.05em;
+    }
+
+    /* MAIN CONTAINER */
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 3.5rem 2rem 5rem 2rem;
+    }
+
+    /* HERO SECTION (GOLDEN RATIO 1.618 : 1) */
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.618fr 1fr;
+      gap: 3.5rem;
+      align-items: center;
+      padding-bottom: 4rem;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--accent-arterial);
+      margin-bottom: 1rem;
+    }
+    .hero-tag::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-arterial);
+    }
+    h1 {
+      font-size: 3.4rem;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.035em;
+      margin-bottom: 1.2rem;
+      color: var(--ink-primary);
+    }
+    .hero-desc {
+      font-size: 1.05rem;
+      color: var(--ink-secondary);
+      line-height: 1.55;
+      max-width: 520px;
+      margin-bottom: 2.2rem;
+    }
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .btn-primary {
+      background: var(--ink-primary);
+      color: #ffffff;
+      padding: 0.85rem 1.8rem;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: 1px solid var(--ink-primary);
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--ink-primary);
+      border: 1px solid var(--ink-primary);
+      padding: 0.85rem 1.6rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: var(--ink-primary); color: #fff; }
+
+    /* PULSE BADGE */
+    .pulse-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .pulse-disc {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, var(--accent-arterial) 0%, var(--accent-arterial-deep) 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      box-shadow: 0 16px 45px var(--accent-arterial-glow);
+      animation: heartbeat 1.25s cubic-bezier(0.21, 0.61, 0.35, 1) infinite;
+      user-select: none;
+    }
+    @keyframes heartbeat {
+      0% { transform: scale(1); }
+      14% { transform: scale(1.06); }
+      28% { transform: scale(0.98); }
+      42% { transform: scale(1.03); }
+      70% { transform: scale(1); }
+      100% { transform: scale(1); }
+    }
+    .pulse-val {
+      font-size: 3.6rem;
+      font-weight: 900;
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+    .pulse-unit {
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-weight: 800;
+      opacity: 0.92;
+      margin-top: 6px;
+    }
+    .pulse-meta {
+      margin-top: 1.2rem;
+      text-align: center;
+    }
+    .pulse-meta-title { font-size: 0.85rem; font-weight: 700; color: var(--ink-primary); }
+    .pulse-meta-sub { font-size: 0.72rem; color: var(--ink-secondary); margin-top: 2px; }
+
+    /* SECTION 2: RESTING HEART RATE CATEGORIES */
+    .section-block {
+      padding: 3.5rem 0;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 1.8rem;
+    }
+    .section-eyebrow {
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-tertiary);
+    }
+    h2 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--ink-primary);
+    }
+    .cards-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.2rem;
+    }
+    .metric-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 1.4rem;
+      position: relative;
+    }
+    .metric-card.active {
+      border: 2px solid var(--ink-primary);
+    }
+    .metric-card.active::after {
+      content: '';
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-arterial);
+    }
+    .card-tag { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; color: var(--ink-tertiary); text-transform: uppercase; }
+    .card-num { font-size: 1.4rem; font-weight: 900; margin: 6px 0; }
+    .card-desc { font-size: 0.78rem; color: var(--ink-secondary); }
+
+    /* FOOTER (CLEAN & SILENT) */
+    footer {
+      text-align: center;
+      padding: 4rem 0 2rem 0;
+      border-top: 1px solid var(--border-hairline);
+      font-size: 0.78rem;
+      color: var(--ink-tertiary);
+    }
+    .secret-trigger {
+      cursor: pointer;
+      color: var(--ink-secondary);
+      user-select: none;
+      transition: color 0.15s;
+    }
+    .secret-trigger:hover { color: var(--ink-primary); }
+
+    /* SECRET PRESENTATION DASHBOARD MODAL */
+    #secret-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 17, 17, 0.75);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+      overflow-y: auto;
+      padding: 2.5rem 1.5rem;
+    }
+    .modal-sheet {
+      background: var(--bg-canvas);
+      border-radius: 8px;
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 2.5rem;
+      border: 1px solid var(--border-hairline);
+      box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border-hairline);
+      padding-bottom: 1.2rem;
+      margin-bottom: 2rem;
+    }
+    .close-btn {
+      background: var(--ink-primary);
+      color: #ffffff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* VIEWPORT GRID IN MODAL */
+    .viewport-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 1.8rem;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    .screen-box {
+      height: 240px;
+      background: #000;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border-hairline);
+    }
+    #sensor-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .canvas-overlay-tag {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(17, 17, 17, 0.85);
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 3px 8px;
+      border-radius: 3px;
+    }
+    .pills-column {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .channel-pill {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 0.75rem 1.1rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+      color: var(--ink-primary);
+      transition: all 0.15s;
+    }
+    .channel-pill.active {
+      background: var(--ink-primary);
+      color: #ffffff;
+      border-color: var(--ink-primary);
+    }
+    .channel-pill.active .pill-sub { color: #aaaaaa; }
+    .pill-sub { font-size: 0.7rem; color: var(--ink-tertiary); font-family: var(--font-mono); }
+
+    /* DSP WAVEFORMS IN MODAL */
+    .waveform-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 0.9rem 1.2rem;
+      margin-bottom: 0.9rem;
+    }
+    .waveform-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--ink-primary);
+      margin-bottom: 6px;
+    }
+    .waveform-sub { color: var(--ink-tertiary); font-family: var(--font-mono); font-weight: normal; }
+    canvas.dsp-plot {
+      width: 100%;
+      height: 48px;
+      display: block;
+    }
+
+    /* THEORY CARDS IN MODAL */
+    .cards-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.1rem;
+      margin-top: 1.2rem;
+    }
+    .theory-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 1.2rem;
+    }
+    .theory-tag {
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: var(--accent-arterial);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .theory-title { font-size: 0.88rem; font-weight: 800; margin-bottom: 6px; }
+    .theory-desc { font-size: 0.74rem; color: var(--ink-secondary); line-height: 1.45; }
+
+    @media (max-width: 860px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 2.5rem; text-align: center; }
+      .hero-desc { margin: 0 auto 2rem auto; }
+      .btn-group { justify-content: center; }
+      .cards-grid-3, .cards-grid-4, .viewport-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- CLEAN PUBLIC HEADER -->
+  <header>
+    <div class="brand-logo">01 / PULSE MONITOR</div>
+    <div class="nav-status">CLIENT-SIDE BIOPHOTONICS</div>
+  </header>
+
+  <main class="container">
+    <!-- SECTION 1: HERO (CLEAN PUBLIC UI) -->
+    <section class="hero-grid">
+      <div>
+        <div class="hero-tag">OPTICAL VITALS</div>
+        <h1>Pulse from pixels.<br/>Toss the sensor.</h1>
+        <p class="hero-desc">
+          Accurate heart rate measurement directly through your smartphone camera. Zero hardware peripherals, zero cloud transmission, 100% private in-browser biophotonic sensing.
+        </p>
+        <div class="btn-group">
+          <button class="btn-primary" onclick="alert('Camera capture module ready for implementation.')">
+            Start Camera &rarr;
+          </button>
+          <button class="btn-secondary" onclick="alert('Upload fingertip video module ready for implementation.')">
+            Upload Video
+          </button>
+        </div>
+      </div>
+
+      <div class="pulse-container">
+        <div class="pulse-disc">
+          <div class="pulse-val" id="bpm-readout">72</div>
+          <div class="pulse-unit">BPM</div>
+        </div>
+        <div class="pulse-meta">
+          <div class="pulse-meta-title">Resting Pulse Detected</div>
+          <div class="pulse-meta-sub">Normal Resting Rhythm (60–100 BPM)</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: RESTING HEART RATE CATEGORIES (CLEAN PUBLIC UI) -->
+    <section class="section-block">
+      <div class="section-header">
+        <div>
+          <div class="section-eyebrow">PHYSIOLOGICAL BASELINE</div>
+          <h2>Resting Heart Rate Categories</h2>
+        </div>
+        <span style="font-size: 0.75rem; color: var(--ink-tertiary);">AHA Standard</span>
+      </div>
+      <div class="cards-grid-3">
+        <div class="metric-card">
+          <div class="card-tag">CATEGORY 01</div>
+          <div class="card-num">40–60 BPM</div>
+          <div class="card-desc">Athletic conditioning / High vagal tone</div>
+        </div>
+        <div class="metric-card active">
+          <div class="card-tag">CATEGORY 02 (NORMAL)</div>
+          <div class="card-num">60–100 BPM</div>
+          <div class="card-desc">Standard adult resting physiological range</div>
+        </div>
+        <div class="metric-card">
+          <div class="card-tag">CATEGORY 03</div>
+          <div class="card-num">&gt; 100 BPM</div>
+          <div class="card-desc">Elevated resting rate / Post-exertion</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLEAN FOOTER WITH SECRET TRIGGER -->
+    <footer>
+      <div>Camera-Based Photoplethysmography • Client-Side System</div>
+      <div style="margin-top: 6px;">
+        <span class="secret-trigger" id="footer-trigger">Developed by Krishnajith KS</span>
+      </div>
+    </footer>
+  </main>
+
+  <!-- SECRET PRESENTATION DASHBOARD MODAL (UNLOCKED VIA 6 CLICKS) -->
+  <div id="secret-modal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div>
+          <div style="font-size: 0.7rem; font-weight: 800; color: var(--accent-arterial); letter-spacing: 0.16em; text-transform: uppercase;">
+            ● TEACHER EVALUATION WORKBENCH
+          </div>
+          <h2 style="font-size: 1.6rem; margin-top: 4px;">DSP Inspection Lab &amp; Defense Deck</h2>
+        </div>
+        <button class="close-btn" onclick="closeModal()">Close Inspector &times;</button>
+      </div>
+
+      <!-- VIDEO VIEWPORT & LIVE CHANNEL SWITCHER -->
+      <div style="font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-tertiary); margin-bottom: 0.5rem;">
+        STAGE 01 / MULTI-CHANNEL OPTICAL VIEWPORT
+      </div>
+      <div class="viewport-grid">
+        <div class="screen-box">
+          <canvas id="sensor-canvas" width="320" height="240"></canvas>
+          <div class="canvas-overlay-tag" id="channel-tag">CHANNEL: GREEN (MAX CONTRAST)</div>
+        </div>
+        <div class="pills-column">
+          <div class="channel-pill active" onclick="setChannel('green', this)">
+            <span>● Green Channel</span>
+            <span class="pill-sub">Oxygenated HbO₂ Peak</span>
+          </div>
+          <div class="channel-pill" onclick="setChannel('rgb', this)">
+            <span>RGB Normal</span>
+            <span class="pill-sub">Full Color Video</span>
+          </div>
+          <div class="channel-pill" onclick="setChannel('red', this)">
+            <span>Red Channel</span>
+            <span class="pill-sub">High Tissue Scatter</span>
+          </div>
+          <div class="channel-pill" onclick="setChannel('blue', this)">
+            <span>Blue Channel</span>
+            <span class="pill-sub">Low Penetration Depth</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIDEO UPLOAD DEMO BOX -->
+      <div style="border: 1px dashed var(--border-hairline); border-radius: 4px; padding: 1.2rem; background: var(--bg-surface); margin-bottom: 2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 0.85rem; font-weight: 700;">Upload Phone Fingertip Video</div>
+            <div style="font-size: 0.75rem; color: var(--ink-secondary);">Downsamples any resolution to 64x64 ROI and resamples timestamps to 30 Hz.</div>
+          </div>
+          <input type="file" accept="video/mp4,video/webm" style="font-size: 0.8rem;" />
+        </div>
+      </div>
+
+      <!-- LIVE DSP WAVEFORMS -->
+      <div style="font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-tertiary); margin-bottom: 0.5rem;">
+        STAGE 02 / MATHEMATICAL WAVEFORMS
+      </div>
+      <div class="waveform-card">
+        <div class="waveform-meta">
+          <span>1. Raw PPG Signal (Detrended Green Channel Spatial Mean)</span>
+          <span class="waveform-sub">Fs = 30 Hz | Uniform Resampled Grid</span>
+        </div>
+        <canvas id="canvas-raw" class="dsp-plot"></canvas>
+      </div>
+
+      <div class="waveform-card">
+        <div class="waveform-meta">
+          <span>2. 4th-Order Butterworth Band-Pass (0.5 – 4.0 Hz)</span>
+          <span class="waveform-sub">Cascaded Biquad SOS (Direct Form II)</span>
+        </div>
+        <canvas id="canvas-biquad" class="dsp-plot"></canvas>
+      </div>
+
+      <div class="waveform-card">
+        <div class="waveform-meta">
+          <span>3. Spectral Power Density (Hann Window + 16,384 Zero-Padded FFT)</span>
+          <span class="waveform-sub" style="color: var(--accent-arterial); font-weight: bold;">f_peak = 1.20 Hz &rarr; 72 BPM</span>
+        </div>
+        <canvas id="canvas-fft" class="dsp-plot"></canvas>
+      </div>
+
+      <!-- THEORY CARDS -->
+      <div style="font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-tertiary); margin: 2rem 0 0.5rem 0;">
+        STAGE 03 / ECE CURRICULUM DEFENSE DECK
+      </div>
+      <div class="cards-grid-4">
+        <div class="theory-card">
+          <div class="theory-tag">01 / OPTICS</div>
+          <div class="theory-title">Beer-Lambert Law</div>
+          <div class="theory-desc">Arterial pulse modulates optical path length. Oxygenated hemoglobin absorbs green light strongly (~540nm).</div>
+        </div>
+        <div class="theory-card">
+          <div class="theory-tag">02 / RESAMPLING</div>
+          <div class="theory-title">30 Hz Uniform Grid</div>
+          <div class="theory-desc">Smartphone frame timestamp jitter is normalized via linear interpolation, preserving exact filter frequency cutoffs.</div>
+        </div>
+        <div class="theory-card">
+          <div class="theory-tag">03 / FILTERING</div>
+          <div class="theory-title">Biquad SOS Cascade</div>
+          <div class="theory-desc">Two cascaded 2nd-order sections isolate 0.5–4.0 Hz cardiac band, rejecting baseline drift and high-frequency CMOS noise.</div>
+        </div>
+        <div class="theory-card">
+          <div class="theory-tag">04 / ESTIMATION</div>
+          <div class="theory-title">Dual Cross-Check</div>
+          <div class="theory-desc">Time-domain systolic peak IBI intervals verified against Hann-windowed FFT spectral peak within 3 BPM tolerance.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1. OPTICAL CANVAS SIMULATOR
+    const sensorCanvas = document.getElementById('sensor-canvas');
+    const sCtx = sensorCanvas.getContext('2d');
+    let currentChannel = 'green';
+
+    function drawSensor() {
+      const w = sensorCanvas.width;
+      const h = sensorCanvas.height;
+      sCtx.clearRect(0, 0, w, h);
+
+      if (currentChannel === 'green') {
+        sCtx.fillStyle = '#04220b';
+        sCtx.fillRect(0, 0, w, h);
+        const grad = sCtx.createRadialGradient(w/2, h/2, 10, w/2, h/2, 90);
+        grad.addColorStop(0, '#34c759');
+        grad.addColorStop(1, '#063d15');
+        sCtx.fillStyle = grad;
+        sCtx.beginPath();
+        sCtx.arc(w/2, h/2, 85, 0, Math.PI * 2);
+        sCtx.fill();
+      } else if (currentChannel === 'red') {
+        sCtx.fillStyle = '#220404';
+        sCtx.fillRect(0, 0, w, h);
+        const grad = sCtx.createRadialGradient(w/2, h/2, 10, w/2, h/2, 90);
+        grad.addColorStop(0, '#e63946');
+        grad.addColorStop(1, '#4a0808');
+        sCtx.fillStyle = grad;
+        sCtx.beginPath();
+        sCtx.arc(w/2, h/2, 85, 0, Math.PI * 2);
+        sCtx.fill();
+      } else if (currentChannel === 'blue') {
+        sCtx.fillStyle = '#040b22';
+        sCtx.fillRect(0, 0, w, h);
+        const grad = sCtx.createRadialGradient(w/2, h/2, 10, w/2, h/2, 90);
+        grad.addColorStop(0, '#1d3557');
+        grad.addColorStop(1, '#08132e');
+        sCtx.fillStyle = grad;
+        sCtx.beginPath();
+        sCtx.arc(w/2, h/2, 85, 0, Math.PI * 2);
+        sCtx.fill();
+      } else {
+        sCtx.fillStyle = '#1a1815';
+        sCtx.fillRect(0, 0, w, h);
+        const grad = sCtx.createRadialGradient(w/2, h/2, 10, w/2, h/2, 90);
+        grad.addColorStop(0, '#f4a261');
+        grad.addColorStop(1, '#66391a');
+        sCtx.fillStyle = grad;
+        sCtx.beginPath();
+        sCtx.arc(w/2, h/2, 85, 0, Math.PI * 2);
+        sCtx.fill();
+      }
+    }
+    drawSensor();
+
+    function setChannel(ch, el) {
+      currentChannel = ch;
+      document.querySelectorAll('.channel-pill').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('channel-tag').innerText = 'CHANNEL: ' + ch.toUpperCase();
+      drawSensor();
+    }
+
+    // 2. LIVE DSP WAVEFORMS PLOTTER
+    function plotWave(canvasId, type) {
+      const c = document.getElementById(canvasId);
+      const ctx = c.getContext('2d');
+      const w = c.width = c.clientWidth * 2;
+      const h = c.height = c.clientHeight * 2;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#111111';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+
+      const samples = 200;
+      for (let i = 0; i < samples; i++) {
+        const t = (i / samples) * 8 * Math.PI;
+        let y = 0;
+        if (type === 'raw') {
+          y = Math.sin(t) + 0.35 * Math.sin(t * 3.2) + 0.2 * Math.sin(t * 0.15) + (Math.random() - 0.5) * 0.15;
+        } else if (type === 'biquad') {
+          y = Math.sin(t) + 0.25 * Math.sin(2 * t);
+        } else if (type === 'fft') {
+          const f = i / samples;
+          y = (Math.abs(f - 0.24) < 0.03) ? 1.8 * Math.exp(-Math.pow((f - 0.24)/0.015, 2)) : 0.08 * Math.random();
+        }
+        const px = (i / (samples - 1)) * w;
+        const py = h / 2 - (y * (h * 0.35));
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      if (type === 'fft') {
+        ctx.fillStyle = '#ff3b19';
+        const peakX = 0.24 * w;
+        ctx.beginPath();
+        ctx.arc(peakX, h * 0.15, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 3. SILENT FOOTER 6-CLICK TRIGGER
+    let clickCount = 0;
+    let timer = null;
+    const trigger = document.getElementById('footer-trigger');
+    const modal = document.getElementById('secret-modal');
+
+    trigger.addEventListener('click', () => {
+      clickCount++;
+      clearTimeout(timer);
+      timer = setTimeout(() => { clickCount = 0; }, 3000);
+
+      if (clickCount >= 6) {
+        modal.style.display = 'block';
+        clickCount = 0;
+        // Draw waveforms once modal is displayed
+        setTimeout(() => {
+          plotWave('canvas-raw', 'raw');
+          plotWave('canvas-biquad', 'biquad');
+          plotWave('canvas-fft', 'fft');
+          drawSensor();
+        }, 50);
+      }
+    });
+
+    function closeModal() {
+      modal.style.display = 'none';
+    }
+  </script>
+</body>
+</html>

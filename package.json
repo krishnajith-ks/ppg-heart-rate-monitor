@@ -1,22 +1,14 @@
 {
-  "name": "ppg-heart-rate-monitor",
+  "name": "ppg-heart-rate-monitor-workspace",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
+  "version": "2.0.0",
+  "description": "Camera-Based PPG Vital Signs Monitor - Client-Side Biophotonics & DSP Workbench",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "test": "node src/dsp/pipeline.test.js",
-    "test:dsp": "node src/dsp/pipeline.test.js"
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "preview": "npm --prefix app run preview",
+    "test": "npm --prefix app test"
   },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7"
-  }
+  "author": "Krishnajith KS (Jojo)",
+  "license": "MIT"
 }
